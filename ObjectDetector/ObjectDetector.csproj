@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net6.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Emgu.CV" Version="4.5.4.4788" />
+    <PackageReference Include="Emgu.CV.Bitmap" Version="4.5.4.4788" />
+    <PackageReference Include="Emgu.CV.runtime.windows" Version="4.5.4.4788" />
+    <PackageReference Include="Microsoft.ML" Version="1.7.0-preview.final" />
+    <PackageReference Include="Microsoft.ML.ImageAnalytics" Version="1.7.0-preview.final" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.9.0" />
+    <PackageReference Include="Microsoft.ML.OnnxTransformer" Version="1.7.0-preview.final" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ObjectDetection\ObjectDetection.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Assets\OnnxModels\038445fcc13943788e0a9db32a2b386f.ONNX.zip">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Assets\OnnxModels\TinyYolo2_model.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
