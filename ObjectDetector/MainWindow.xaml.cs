@@ -18,6 +18,8 @@ using Rectangle = System.Windows.Shapes.Rectangle;
 using Window = System.Windows.Window;
 using Timer = System.Timers.Timer;
 using Point = System.Drawing.Point;
+using Microsoft.AspNetCore.SignalR.Client;
+using ObjectDetect.Shared;
 
 namespace ObjectDetector
 {
@@ -27,6 +29,7 @@ namespace ObjectDetector
     public partial class MainWindow : Window
     {
         private VideoCapture? capture;
+        private HubConnection connection;
         private CancellationTokenSource? cameraCaptureCancellationTokenSource;
 
         private OnnxOutputParser? outputParser;
@@ -36,10 +39,12 @@ namespace ObjectDetector
         private WriteableBitmap? _writableBitmap;
         private Dictionary<BoundingBox, ObjectTrackInfo> _objectTracking = new Dictionary<BoundingBox, ObjectTrackInfo>();
         private Timer _frameStartTimer = new Timer(5000) { AutoReset = true,Enabled = true};//5seconds
+        private Timer _clearFrameTimer = new Timer(60000) { AutoReset = true, Enabled = true };//60seconds
+
         private bool _canDetectObjects = true;
-        private float _detectionTreshold = 0.45f;
-        private float _nmsTreshold = 0.35f;
-        private bool _isCustomModel = true;
+        private float _detectionTreshold = 0.25f;
+        private float _nmsTreshold = 0.20f;
+        private bool _isCustomModel = false;
 
         private static readonly string modelsDirectory = Path.Combine(Environment.CurrentDirectory, @"Assets\OnnxModels");
 
@@ -47,8 +52,17 @@ namespace ObjectDetector
         {
             InitializeComponent();
             _frameStartTimer.Elapsed += (s, e) => _canDetectObjects = true;
-            _isCustomModel = LoadModel(true);
+            _isCustomModel = LoadModel(!_isCustomModel);
             this.Loaded += MainWindow_Loaded;
+            connection = new HubConnectionBuilder()
+               .WithUrl("https://localhost:7256/objectdetecthub")
+               .Build();
+            connection.Closed += async (error) =>
+            {
+                await Task.Delay(new Random().Next(0, 5) * 1000);
+                await connection.StartAsync();
+            };
+            connection.StartAsync();
         }
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -114,6 +128,7 @@ namespace ObjectDetector
                 if (capture.IsOpened)
                 {
                     _frameStartTimer.Start();
+                    _clearFrameTimer.Start();
                     while (!token.IsCancellationRequested)
                     {
                         var image = capture.QueryFrame().ToImage<Bgr, byte>();
@@ -141,13 +156,35 @@ namespace ObjectDetector
                 (_, _, _) => new List<BoundingBox>()
             };
 
+            _objectTracking = capture?.QueryFrame().TrackObjects(filteredBoxes, _objectTracking)!;
+            _objectTracking = _canDetectObjects ? _objectTracking.RemoveDuplicates(_detectionTreshold, _nmsTreshold) : _objectTracking;
+
             _canDetectObjects = false;//reset to false to avoid object detection at every single frame and let the timer reactivate detection
 
+            _frameStartTimer.Elapsed += (s, e) =>
+            {
+                RemoveDisappearedObjects();
+                var notMovingObjects = _objectTracking.Where(x => x.Value.MotionHistory.Count > 15).Where(x =>
+                {
+                    var lastFiveMotions = x.Value.MotionHistory.TakeLast(5);
+                    var xMvmtTreshold = lastFiveMotions.First().X - lastFiveMotions.Last().X;
+                    var yMvmTreshold = lastFiveMotions.First().Y - lastFiveMotions.Last().Y;
+                    return Math.Abs(xMvmtTreshold) < 5 && Math.Abs(yMvmTreshold) < 5;
+                });
+                foreach(var item in notMovingObjects)
+                {
+                    var lastMotion = item.Value.MotionHistory.Last();
+                    if(lastMotion.X < -20 || (WebCamCanvas.ActualWidth <= lastMotion.X * 2))
+                        OnObjectDesappearing(item.Value);
+                    _objectTracking.Remove(item.Key);
+                }
+            };
 
-            _objectTracking = image.Mat.TrackObjects(filteredBoxes, _objectTracking)
-                                        .RemoveDuplicates(_detectionTreshold, _nmsTreshold);
-
-            _objectTracking.Values.Where(x => x.MaxDisappearance <= 0).Select(x => OnObjectDesappearing(x));
+            _clearFrameTimer.Elapsed += (s, e) =>
+            {
+                //_objectTracking.Values.Select(x => x.DisposeTracking());
+                _objectTracking.Clear();
+            };
 
             if (!token.IsCancellationRequested)
             {
@@ -155,6 +192,16 @@ namespace ObjectDetector
                 {
                     DrawOverlays(_objectTracking, WebCamImage.ActualHeight, WebCamImage.ActualWidth);
                 });
+            }
+
+            void RemoveDisappearedObjects()
+            {
+                var disappearedObjects = _objectTracking.Where(x => x.Value.MaxDisappearance <= 1);
+                foreach (var item in disappearedObjects)
+                {
+                    OnObjectDesappearing(item.Value);
+                    _objectTracking.Remove(item.Key);
+                }
             }
         }
 
@@ -220,60 +267,79 @@ namespace ObjectDetector
 
             foreach (var item in objects)
             {
-                // process output boxes
-                double x = Math.Max(item.Value.CurrentBox.X, 0);
-                double y = Math.Max(item.Value.CurrentBox.Y, 0);
-                double width = Math.Min(originalWidth - x, item.Value.CurrentBox.Width);
-                double height = Math.Min(originalHeight - y,item.Value.CurrentBox.Height);
-
-                // fit to current image size
-                x = originalWidth * x / ImageSettings.imageWidth;
-                y = originalHeight * y / ImageSettings.imageHeight;
-                width = originalWidth * width / ImageSettings.imageWidth;
-                height = originalHeight * height / ImageSettings.imageHeight;
-
-                var boxColor = item.Value.InitialBoundingBox.BoxColor.ToMediaColor();
-
-                var objBox = new Rectangle
+                if(item.Value.CurrentBox.Height > 0 && item.Value.CurrentBox.Width > 0)
                 {
-                    Width = width,
-                    Height = height,
-                    Fill = new SolidColorBrush(Colors.Transparent),
-                    Stroke = new SolidColorBrush(boxColor),
-                    StrokeThickness = 2.0,
-                    Margin = new Thickness(x, y, 0, 0)
-                };
+                    // process output boxes
+                    double x = Math.Max(item.Value.CurrentBox.X, 0);
+                    double y = Math.Max(item.Value.CurrentBox.Y, 0);
+                    double width = Math.Min(originalWidth - x, item.Value.CurrentBox.Width);
+                    double height = Math.Min(originalHeight - y, item.Value.CurrentBox.Height);
 
-                var position = item.Value.CurrentBox.Location.X < 0 ? "Out" : "In";
+                    // fit to current image size
+                    x = originalWidth * x / ImageSettings.imageWidth;
+                    y = originalHeight * y / ImageSettings.imageHeight;
+                    width = originalWidth * width / ImageSettings.imageWidth;
+                    height = originalHeight * height / ImageSettings.imageHeight;
 
-                var objDescription = new TextBlock
-                {
-                    Margin = new Thickness(x + 4, y + 4, 0, 0),
-                    Text = $"{item.Value.InitialBoundingBox.Description}({position})",
-                    FontWeight = FontWeights.Bold,
-                    Width = 146,
-                    Height = 21,
-                    TextAlignment = TextAlignment.Center
-                };
+                    var boxColor = item.Value.InitialBoundingBox.BoxColor.ToMediaColor();
 
-                var objDescriptionBackground = new Rectangle
-                {
-                    Width = 150,
-                    Height = 29,
-                    Fill = new SolidColorBrush(boxColor),
-                    Margin = new Thickness(x, y, 0, 0)
-                };
+                    var objBox = new Rectangle
+                    {
+                        Width = width,
+                        Height = height,
+                        Fill = new SolidColorBrush(Colors.Transparent),
+                        Stroke = new SolidColorBrush(boxColor),
+                        StrokeThickness = 2.0,
+                        Margin = new Thickness(x, y, 0, 0)
+                    };
+                    string position = GetCurrentPosition(item.Value);
 
-                WebCamCanvas.Children.Add(objDescriptionBackground);
-                WebCamCanvas.Children.Add(objDescription);
-                WebCamCanvas.Children.Add(objBox);
+                    var objDescription = new TextBlock
+                    {
+                        Margin = new Thickness(x + 4, y + 4, 0, 0),
+                        Text = $"{item.Value.InitialBoundingBox.Description}({position})",
+                        FontWeight = FontWeights.Bold,
+                        Width = 156,
+                        Height = 21,
+                        TextAlignment = TextAlignment.Center
+                    };
+
+                    var objDescriptionBackground = new Rectangle
+                    {
+                        Width = 165,
+                        Height = 29,
+                        Fill = new SolidColorBrush(boxColor),
+                        Margin = new Thickness(x, y, 0, 0)
+                    };
+
+                    WebCamCanvas.Children.Add(objDescriptionBackground);
+                    WebCamCanvas.Children.Add(objDescription);
+                    WebCamCanvas.Children.Add(objBox);
+                }
             }
         }
 
+        private static string GetCurrentPosition(ObjectTrackInfo item)
+        {
+            return item.CurrentBox.Location.X < 0 ? "Out" : "In";
+        }
 
         private int OnObjectDesappearing(ObjectTrackInfo objectTrackInfo)
         {
-            MessageBox.Show($"{objectTrackInfo.InitialBoundingBox.Description} has disappeared");
+            App.Current.Dispatcher.Invoke(async () =>
+            {
+                if(connection.State == HubConnectionState.Connected)
+                {
+                    await connection.InvokeAsync("OnDetection", new ProductDetection()
+                    {
+                        Name = objectTrackInfo.InitialBoundingBox.Description,
+                        IsIn = GetCurrentPosition(objectTrackInfo).ToLower() == "out" ? false : true,
+                        Date = DateTime.Now,
+                        Id = "dest"
+                    });
+                }
+            }); 
+            
             return 0;
         }
 

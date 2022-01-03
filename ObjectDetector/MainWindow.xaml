@@ -6,15 +6,8 @@
         xmlns:local="clr-namespace:ObjectDetector"
         mc:Ignorable="d"
         Title="Stock Detection" Height="506" Width="640">
-    <Grid Background="Black">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-        <Image x:Name="WebCamImage" Grid.Row="0" />
-        <Canvas x:Name="WebCamCanvas" Grid.Row="0" Width="{Binding Path=ActualWidth, ElementName=WebCamImage}"/>
-        <StackPanel>
-            <TextBlock x:Name="TxtStart"/>
-            <TextBlock x:Name="TxtEnd"/>
-        </StackPanel>
+    <Grid >
+        <Image x:Name="WebCamImage"  />
+        <Canvas x:Name="WebCamCanvas"  Width="{Binding Path=ActualWidth, ElementName=WebCamImage}"/>
     </Grid>
 </Window>

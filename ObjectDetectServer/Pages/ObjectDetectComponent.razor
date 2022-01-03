@@ -1,0 +1,47 @@
+﻿@using Microsoft.AspNetCore.SignalR.Client
+@using ObjectDetect.Shared
+
+<div>
+    <RadzenDataList TItem="ProductDetection" WrapItems="true" AllowPaging="true" Data=@products>
+        <Template Context="item">
+            <div class="grid grid-cols-8 gap-1  items-center hover:cursor-pointer">
+                <div class="col-span-5 flex flex-col space-y-1">
+                    <p class="text-gray-600 font-medium">@item.Name</p>
+                    <p class="text-gray-500">@item.Id</p>
+                </div>
+                <div class="col-span-3 flex flex-col space-y-1 items-end justify-center">
+                    @if (item.IsIn == true)
+                    {
+                        <RadzenBadge IsPill="true" BadgeStyle="BadgeStyle.Success" Text="In Stock" />
+                    }
+                    else
+                    {
+                        <RadzenBadge IsPill="true" BadgeStyle="BadgeStyle.Primary" Text="Out Stock" />
+                    }
+                    <p class="text-gray-400 text-sm">@item.Date.ToLocalTime()</p>
+                </div>
+            </div>
+        </Template>
+    </RadzenDataList>
+</div>
+
+@code {
+    private HubConnection? hubConnection;
+    private List<ProductDetection> products = new List<ProductDetection>();
+    [Inject] NavigationManager NavigationManager { get; set; } = null!;
+    protected async override Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/objectdetecthub"))
+            .Build();
+
+        hubConnection.On<ProductDetection>("OnDetection", product =>
+        {
+            products.Add(product);
+            products = products.OrderByDescending(x => x.Date).ToList();
+            StateHasChanged();
+        });
+
+        await hubConnection.StartAsync();
+    }
+}

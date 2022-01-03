@@ -31,6 +31,12 @@ namespace ObjectDetector.Extensions
             return objectTrackInfo.Update(currentBox, hasDesapeared:!isFound);
         }
 
+        public static ObjectTrackInfo DisposeTracking(this ObjectTrackInfo objectTrackInfo)
+        {
+            objectTrackInfo.Tracker.Dispose();
+            return objectTrackInfo;
+        }
+
         public static Point GetCenter(int width, int height) => new Point(width / 2, height / 2);
 
         public static Point GetCenter(this (int Width, int Height) dimensions) => new Point(dimensions.Width / 2, dimensions.Height / 2);
