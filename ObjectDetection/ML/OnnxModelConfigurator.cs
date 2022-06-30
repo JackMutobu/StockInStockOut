@@ -13,8 +13,6 @@ namespace OnnxObjectDetection
         public OnnxModelConfigurator(IOnnxModel onnxModel)
         {
             mlContext = new MLContext();
-            // Model creation and pipeline definition for images needs to run just once,
-            // so calling it from the constructor:
             mlModel = SetupMlNetModel(onnxModel);
         }
 

@@ -38,12 +38,12 @@ namespace ObjectDetector
 
         private WriteableBitmap? _writableBitmap;
         private Dictionary<BoundingBox, ObjectTrackInfo> _objectTracking = new Dictionary<BoundingBox, ObjectTrackInfo>();
-        private Timer _frameStartTimer = new Timer(5000) { AutoReset = true,Enabled = true};//5seconds
+        private Timer _frameStartTimer = new Timer(5000) { AutoReset = true,Enabled = true};//1seconds
         private Timer _clearFrameTimer = new Timer(60000) { AutoReset = true, Enabled = true };//60seconds
 
         private bool _canDetectObjects = true;
-        private float _detectionTreshold = 0.25f;
-        private float _nmsTreshold = 0.20f;
+        private float _detectionTreshold = 0.10f;
+        private float _nmsTreshold = 0.40f;
         private bool _isCustomModel = false;
 
         private static readonly string modelsDirectory = Path.Combine(Environment.CurrentDirectory, @"Assets\OnnxModels");
@@ -85,10 +85,8 @@ namespace ObjectDetector
 
         private bool LoadModel(bool tinyModel)
         {
-            // Check for an Onnx model exported from Custom Vision
             var customVisionExport = Directory.GetFiles(modelsDirectory, "*.zip").FirstOrDefault();
 
-            // If there is one, use it.
             if (customVisionExport is not null && !tinyModel)
             {
                 var customVisionModel = new CustomVisionModel(customVisionExport);
@@ -98,7 +96,7 @@ namespace ObjectDetector
                 customVisionPredictionEngine = modelConfigurator.GetMlNetPredictionEngine<CustomVisionPrediction>();
                 return true;
             }
-            else // Otherwise default to Tiny Yolo Onnx model
+            else 
             {
                 var tinyYoloModel = new TinyYoloModel(Path.Combine(modelsDirectory, "TinyYolo2_model.onnx"));
                 var modelConfigurator = new OnnxModelConfigurator(tinyYoloModel);
@@ -164,20 +162,7 @@ namespace ObjectDetector
             _frameStartTimer.Elapsed += (s, e) =>
             {
                 RemoveDisappearedObjects();
-                var notMovingObjects = _objectTracking.Where(x => x.Value.MotionHistory.Count > 15).Where(x =>
-                {
-                    var lastFiveMotions = x.Value.MotionHistory.TakeLast(5);
-                    var xMvmtTreshold = lastFiveMotions.First().X - lastFiveMotions.Last().X;
-                    var yMvmTreshold = lastFiveMotions.First().Y - lastFiveMotions.Last().Y;
-                    return Math.Abs(xMvmtTreshold) < 5 && Math.Abs(yMvmTreshold) < 5;
-                });
-                foreach(var item in notMovingObjects)
-                {
-                    var lastMotion = item.Value.MotionHistory.Last();
-                    if(lastMotion.X < -20 || (WebCamCanvas.ActualWidth <= lastMotion.X * 2))
-                        OnObjectDesappearing(item.Value);
-                    _objectTracking.Remove(item.Key);
-                }
+                RemoveNotMovingObjects();
             };
 
             _clearFrameTimer.Elapsed += (s, e) =>
@@ -205,61 +190,24 @@ namespace ObjectDetector
             }
         }
 
-        
-
-        private void DrawOverlays(List<BoundingBox> filteredBoxes, double originalHeight, double originalWidth)
+        private void RemoveNotMovingObjects()
         {
-            WebCamCanvas.Children.Clear();
-
-            foreach (var box in filteredBoxes)
+            var notMovingObjects = _objectTracking.Where(x => x.Value.MotionHistory.Count > 15).Where(x =>
             {
-                // process output boxes
-                double x = Math.Max(box.Dimensions.X, 0);
-                double y = Math.Max(box.Dimensions.Y, 0);
-                double width = Math.Min(originalWidth - x, box.Dimensions.Width);
-                double height = Math.Min(originalHeight - y, box.Dimensions.Height);
-
-                // fit to current image size
-                x = originalWidth * x / ImageSettings.imageWidth;
-                y = originalHeight * y / ImageSettings.imageHeight;
-                width = originalWidth * width / ImageSettings.imageWidth;
-                height = originalHeight * height / ImageSettings.imageHeight;
-
-                var boxColor = box.BoxColor.ToMediaColor();
-
-                var objBox = new Rectangle
-                {
-                    Width = width,
-                    Height = height,
-                    Fill = new SolidColorBrush(Colors.Transparent),
-                    Stroke = new SolidColorBrush(boxColor),
-                    StrokeThickness = 2.0,
-                    Margin = new Thickness(x, y, 0, 0)
-                };
-
-                var objDescription = new TextBlock
-                {
-                    Margin = new Thickness(x + 4, y + 4, 0, 0),
-                    Text = box.Description,
-                    FontWeight = FontWeights.Bold,
-                    Width = 126,
-                    Height = 21,
-                    TextAlignment = TextAlignment.Center
-                };
-
-                var objDescriptionBackground = new Rectangle
-                {
-                    Width = 134,
-                    Height = 29,
-                    Fill = new SolidColorBrush(boxColor),
-                    Margin = new Thickness(x, y, 0, 0)
-                };
-
-                WebCamCanvas.Children.Add(objDescriptionBackground);
-                WebCamCanvas.Children.Add(objDescription);
-                WebCamCanvas.Children.Add(objBox);
+                var lastFiveMotions = x.Value.MotionHistory.TakeLast(5);
+                var xMvmtTreshold = lastFiveMotions.First().X - lastFiveMotions.Last().X;
+                var yMvmTreshold = lastFiveMotions.First().Y - lastFiveMotions.Last().Y;
+                return Math.Abs(xMvmtTreshold) < 5 && Math.Abs(yMvmTreshold) < 5;
+            });
+            foreach (var item in notMovingObjects)
+            {
+                var lastMotion = item.Value.MotionHistory.Last();
+                if (lastMotion.X < -20 || (WebCamCanvas.ActualWidth <= lastMotion.X * 2))
+                    OnObjectDesappearing(item.Value);
+                _objectTracking.Remove(item.Key);
             }
         }
+
 
         private void DrawOverlays(Dictionary<BoundingBox, ObjectTrackInfo> objects, double originalHeight, double originalWidth)
         {
@@ -333,7 +281,7 @@ namespace ObjectDetector
                     await connection.InvokeAsync("OnDetection", new ProductDetection()
                     {
                         Name = objectTrackInfo.InitialBoundingBox.Description,
-                        IsIn = GetCurrentPosition(objectTrackInfo).ToLower() == "out" ? false : true,
+                        IsIn = objectTrackInfo.MotionHistory.Last().X < 0 ? false : true,
                         Date = DateTime.Now,
                         Id = "dest"
                     });

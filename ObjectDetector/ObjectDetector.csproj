@@ -25,7 +25,16 @@
 
   <ItemGroup>
     <None Update="Assets\OnnxModels\038445fcc13943788e0a9db32a2b386f.ONNX.zip">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
+    <None Update="Assets\OnnxModels\a9451c37c22b4bc289b4ddee27d3218b.ONNX.zip">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
+    <None Update="Assets\OnnxModels\iteration3.ONNX.zip">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Assets\OnnxModels\iteration4.ONNX.zip">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
     <None Update="Assets\OnnxModels\TinyYolo2_model.onnx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

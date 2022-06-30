@@ -12,7 +12,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="ML\OnnxModels\" />
+    <None Update="ML\OnnxModels\a9451c37c22b4bc289b4ddee27d3218b.ONNX.zip">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
